@@ -13,11 +13,11 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
         return fmt.Errorf("error retrieving feed follows: %w", err)
     }
 
+    fmt.Printf("Feed follows for user %s:\n", user.Name)
     for _, follow := range follows {
-        fmt.Printf("Feed follows for user %s:\n", user.Name)
         fmt.Printf("* %s\n", follow.FeedName)
-        fmt.Println("======================================")
     }
+    fmt.Println("======================================")
 
     return nil
 }

@@ -8,11 +8,14 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/fedjaw/gator/internal/database"
+	"github.com/google/uuid"
 )
 
 func handlerAgg(s *state, cmd command) error {
     if len(cmd.args) != 1 {
-        return fmt.Errorf("usage agg <time>")
+        return fmt.Errorf("usage agg <time> (for example agg 1s)")
     }
     timeBetweenReqs, err := time.ParseDuration(cmd.args[0])
     if err != nil {
@@ -53,8 +56,29 @@ func scrapeFeeds(s *state) error {
         return fmt.Errorf("error fetching feed %w", err)
     }
 
-    for _, item := range rssFeed.Channel.Item {
-        fmt.Printf("%s\n", item.Title)
+    for _, post := range rssFeed.Channel.Item {
+        fmt.Printf("%s\n", post.Title)
+
+        publishedAt, _ := time.Parse(time.RFC1123, post.PubDate)
+
+        createPostParams := database.CreatePostParams{
+            ID: uuid.New(),
+            CreatedAt: time.Now().UTC(),
+            UpdatedAt:time.Now().UTC(),
+            Title: post.Title,
+            Url: post.Link,
+            Description: sql.NullString{
+				String: item.Description,
+				Valid:  true,
+			},
+            PublishedAt: publishedAt,
+            FeedID: feed.ID,
+        }
+        _, err := s.db.CreatePost(context.Background(), createPostParams)
+        if err != nil {
+            fmt.Printf("%v\n", err)
+            continue
+        }
     }
 
     return nil
@@ -110,3 +134,51 @@ type RSSItem struct {
 	Description string `xml:"description"`
 	PubDate     string `xml:"pubDate"`
 }
+
+
+/*  ORIGINAL SOLUTION OF scrapeFeed function
+func scrapeFeed(db *database.Queries, feed database.Feed) {
+	_, err := db.MarkFeedFetched(context.Background(), feed.ID)
+	if err != nil {
+		log.Printf("Couldn't mark feed %s fetched: %v", feed.Name, err)
+		return
+	}
+
+	feedData, err := fetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		log.Printf("Couldn't collect feed %s: %v", feed.Name, err)
+		return
+	}
+	for _, item := range feedData.Channel.Item {
+		publishedAt := sql.NullTime{}
+		if t, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
+			publishedAt = sql.NullTime{
+				Time:  t,
+				Valid: true,
+			}
+		}
+
+		_, err = db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+			FeedID:    feed.ID,
+			Title:     item.Title,
+			Description: sql.NullString{
+				String: item.Description,
+				Valid:  true,
+			},
+			Url:         item.Link,
+			PublishedAt: publishedAt,
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+				continue
+			}
+			log.Printf("Couldn't create post: %v", err)
+			continue
+		}
+	}
+	log.Printf("Feed %s collected, %v posts found", feed.Name, len(feedData.Channel.Item))
+}
+*/
